@@ -1,5 +1,10 @@
 # OpenKNet v2.0
 
+[![Tests](https://github.com/your-org/openknet/actions/workflows/tests.yml/badge.svg)](https://github.com/your-org/openknet/actions/workflows/tests.yml)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://python.org)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+[![Code style: ruff](https://img.shields.io/badge/code%20style-ruff-orange.svg)](https://github.com/astral-sh/ruff)
+
 **Production-grade Knowledge Network Mining framework.**
 
 Transforms unstructured text documents into a queryable, evidence-backed knowledge graph.
@@ -17,6 +22,11 @@ Documents (TXT, MD, PDF, DOCX, HTML)
         ↓  (optional)
   LangGraph reflection · root-cause · ReAct agents
 ```
+
+> **Package name:** `openknet` (install and import as `openknet`)  
+> **Repo name:** `openknet_sdk` (the SDK is the primary interface)  
+> **Command:** `openknet` (installed by `pip install -e .`)  
+> **Current status:** see [CURRENT_STATUS.md](CURRENT_STATUS.md) for what is implemented vs planned.
 
 ---
 
@@ -68,6 +78,32 @@ Documents (TXT, MD, PDF, DOCX, HTML)
 24. [Extending](#extending)
 25. [Testing](#testing)
 26. [Version analysis — v0 → v1 → v2](#version-analysis)
+
+---
+
+## Current status
+
+OpenKNet v2.0 is a **framework in active development**, not a finished product.
+The core pipeline (ingest → build → rank → ask → path) is stable and tested.
+Several advanced features are optional extras that require additional packages.
+
+**What works today (61 tests, CI-verified):**
+- Full pipeline with SQLite (zero config) and PostgreSQL
+- BM25 ranking with in-memory cache (3 ms hot-path latency)
+- Language-agnostic snippet retrieval (Spanish question → English snippets)
+- Typed Python SDK with async + sync interfaces
+- FastAPI REST API with authentication and Prometheus metrics
+- LangGraph integration: ReflectiveAsk, RootCause, ReAct tools
+- Ollama support for 100% local LLM inference (no API key)
+- GLiNER zero-shot NER, spaCy NER (both CPU, no GPU required)
+
+**What is not yet implemented:**
+- LLM-based relation extraction during build
+- Entity coreference resolution ("the service" → "AuthService")
+- pgvector / Neo4j / Memgraph backends
+- Temporal validity of relations
+
+Full list in [CURRENT_STATUS.md](CURRENT_STATUS.md).
 
 ---
 
@@ -1760,6 +1796,30 @@ Finds conceptually related entities when keywords don't match exactly:
 "authentication failure" retrieves chunks about "login error" and "AuthService".
 
 Sits at the top of the ranking chain: Semantic → BM25 → TF-IDF → fallback.
+
+---
+
+## Benchmarks
+
+Measured on Apple M2, Python 3.12, SQLite, BM25 (3 docs / 28 chunks / 41 entities):
+
+| Operation | Latency | Notes |
+|-----------|---------|-------|
+| `build()` full | ~240 ms | Includes dedup pass |
+| `rank()` cold | ~235 ms | First call: fits BM25, builds index |
+| `rank()` hot | **3 ms** | Subsequent calls: in-memory cache hit |
+| `ask()` | ~9 ms | rank + FTS5 snippet retrieval |
+| `path()` | ~30 ms | BFS depth 4, 41 entities |
+
+The hot-path latency (3 ms) is the production-relevant number. The index is
+built once after each `build()` and all subsequent queries are served from
+RAM with no DB access.
+
+Run locally:
+```bash
+python examples/quickstart.py    # end-to-end demo
+python -m pytest tests/ -v       # full test suite (61 tests)
+```
 
 ---
 

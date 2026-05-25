@@ -44,6 +44,18 @@ def _file_hash(path: Path) -> str:
 
 # ─────────────────────────────────────────────────────────────────────────────
 
+import re as _re
+
+def _numeric_variants(a: str, b: str) -> bool:
+    """Return True when two strings differ only in a trailing number sequence."""
+    na = _re.sub(r'\d+$', '', a.strip())
+    nb = _re.sub(r'\d+$', '', b.strip())
+    # Also handle embedded numbers like "error 503" vs "error 500"
+    na2 = _re.sub(r'\d+', '#', a.strip().lower())
+    nb2 = _re.sub(r'\d+', '#', b.strip().lower())
+    return (na.lower() == nb.lower() and na != a) or (na2 == nb2 and na2 != a.strip().lower())
+
+
 class Project:
     def __init__(self, name: str) -> None:
         self.name = name
@@ -444,7 +456,9 @@ class Project:
                         sim = difflib.SequenceMatcher(
                             None, e1.name.lower(), e2.name.lower()
                         ).ratio()
-                        if sim >= threshold:
+                        # Skip pairs that differ primarily in a trailing number
+                        # e.g. "error 503" vs "error 500", "INC-1001" vs "INC-1002"
+                        if sim >= threshold and not _numeric_variants(e1.name, e2.name):
                             canonical = e1 if e1.mention_count >= e2.mention_count else e2
                             dup = e2 if canonical is e1 else e1
                             dup.canonical_id = canonical.id

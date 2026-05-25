@@ -45,6 +45,8 @@ class BuildResponse(BaseModel):
     relations: int
     evidence: int
     chunks_processed: int
+    mode: str = "full"
+    dedup_merges: int = 0
 
 
 class RankResponse(BaseModel):
@@ -52,6 +54,7 @@ class RankResponse(BaseModel):
     query: str
     results: list[EntityResult]
     total_matching: int
+    ranker: str = "unknown"
 
 
 class AskResponse(BaseModel):

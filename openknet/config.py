@@ -64,7 +64,7 @@ class Settings(BaseSettings):
 
     # ---- Deduplication ----
     dedup_enabled: bool = True
-    dedup_threshold: float = 0.85   # string similarity 0–1
+    dedup_threshold: float = 0.92   # string similarity 0–1
 
     # ---- Versioning ----
     versioning_enabled: bool = True

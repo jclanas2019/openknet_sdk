@@ -132,10 +132,10 @@ class OpenKNet:
             raise ProjectNotFoundError(str(exc)) from exc
         return IngestResponse(**raw)
 
-    async def build(self) -> BuildResponse:
+    async def build(self, incremental: bool = False) -> BuildResponse:
         """Extract entities and relations and persist the knowledge graph."""
         try:
-            raw = await self._project().build()
+            raw = await self._project().build(incremental=incremental)
         except FileNotFoundError as exc:
             raise ProjectNotFoundError(str(exc)) from exc
         return BuildResponse(**raw)
@@ -147,6 +147,7 @@ class OpenKNet:
             project=raw["project"],
             query=raw["query"],
             total_matching=raw["total_matching"],
+            ranker=raw.get("ranker", "unknown"),
             results=[
                 EntityResult(
                     id=r["entity"]["id"],
@@ -222,6 +223,25 @@ class OpenKNet:
             return [e for e in resp.results if e.type == entity_type]
         return resp.results
 
+
+    async def snapshots(self) -> list[dict]:
+        """Return graph version snapshots (one per build)."""
+        return await self._project().snapshots()
+
+    async def ingest_errors(self) -> list[dict]:
+        """Return documents that failed to ingest."""
+        return await self._project().ingest_errors()
+
+    async def submit_feedback(
+        self,
+        entity_id: str,
+        query: str,
+        rating: int,
+        comment: str | None = None,
+    ) -> dict:
+        """Record user feedback (1-5) on entity relevance for a query."""
+        return await self._project().submit_feedback(entity_id, query, rating, comment)
+
     # ------------------------------------------------------------------
     # Sync wrappers (convenience for scripts / notebooks)
     # ------------------------------------------------------------------
@@ -229,8 +249,8 @@ class OpenKNet:
     def ingest_sync(self, path: str | Path) -> IngestResponse:
         return _run_sync(self.ingest(path))
 
-    def build_sync(self) -> BuildResponse:
-        return _run_sync(self.build())
+    def build_sync(self, incremental: bool = False) -> BuildResponse:
+        return _run_sync(self.build(incremental=incremental))
 
     def rank_sync(self, query: str, limit: int = 10) -> RankResponse:
         return _run_sync(self.rank(query, limit=limit))

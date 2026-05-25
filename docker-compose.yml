@@ -1,0 +1,68 @@
+version: "3.9"
+
+# ---- SQLite (default, zero dependencies) ----
+# docker compose up
+
+# ---- PostgreSQL (production) ----
+# docker compose --profile postgres up
+
+services:
+  api:
+    build: .
+    image: openknet:latest
+    ports:
+      - "8000:8000"
+    volumes:
+      - openknet_data:/data
+    environment:
+      OPENKNET_WORKSPACE_ROOT: /data
+      OPENKNET_LOG_LEVEL: INFO
+      OPENKNET_CHUNK_SIZE: "800"
+      OPENKNET_CHUNK_OVERLAP: "150"
+      OPENKNET_MAX_FILE_SIZE_MB: "100"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  # PostgreSQL variant — overrides DATABASE_URL
+  api-pg:
+    build: .
+    image: openknet:latest
+    profiles: [postgres]
+    ports:
+      - "8000:8000"
+    environment:
+      OPENKNET_DATABASE_URL: postgresql://openknet:openknet@db:5432/openknet
+      OPENKNET_LOG_LEVEL: INFO
+      OPENKNET_PG_POOL_SIZE: "10"
+      OPENKNET_PG_MAX_OVERFLOW: "20"
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  db:
+    image: postgres:16-alpine
+    profiles: [postgres]
+    environment:
+      POSTGRES_USER: openknet
+      POSTGRES_PASSWORD: openknet
+      POSTGRES_DB: openknet
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U openknet"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+volumes:
+  openknet_data:
+    driver: local
+  pg_data:
+    driver: local

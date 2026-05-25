@@ -1,0 +1,53 @@
+entities:
+  Customer:
+    seed_terms: [ACME, Globex, TechCorp, Umbrella, Initech]
+  Product:
+    seed_terms: [Portal X, Billing API, Analytics Dashboard, Auth Gateway, Notification Service]
+  Component:
+    seed_terms: [AuthService, BillingService, SessionStore, PaymentGateway, EmailWorker, CacheLayer, DatabaseCluster, LoadBalancer]
+  Error:
+    seed_terms: [error 503, timeout, error 500, error 429, OOM, deadlock, connection refused, memory leak, CPU spike, null pointer]
+  Incident:
+    seed_terms: [INC-1001, INC-1002, INC-1003, INC-1004, INC-1005, INC-1006]
+  Engineer:
+    seed_terms: [Alice, Bob, Carol, David, Eve]
+  Team:
+    seed_terms: [Platform Team, Backend Team, SRE Team, Security Team]
+
+relations:
+  reports:
+    source: Customer
+    target: Incident
+    triggers: [reported, reports, filed, opened]
+  affects:
+    source: Incident
+    target: Product
+    triggers: [affects, affected, impacted, degraded]
+  involves:
+    source: Incident
+    target: Component
+    triggers: [involves, related to, traced to, identified in, found in]
+  causes:
+    source: Component
+    target: Error
+    triggers: [causes, caused, triggering, trigger, throws, raised, produces]
+  depends_on:
+    source: Product
+    target: Component
+    triggers: [depends on, dependency, requires, backed by, uses]
+  resolved_by:
+    source: Incident
+    target: Component
+    triggers: [resolved by, mitigated by, fixed by, closed by]
+  owned_by:
+    source: Component
+    target: Team
+    triggers: [owned by, maintained by, managed by, operated by]
+  assigned_to:
+    source: Incident
+    target: Engineer
+    triggers: [assigned to, handled by, investigated by, owned by]
+  escalated_to:
+    source: Incident
+    target: Team
+    triggers: [escalated to, handed off to, routed to]

@@ -1,0 +1,2 @@
+[console_scripts]
+openknet = openknet.cli:app

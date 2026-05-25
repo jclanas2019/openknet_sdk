@@ -1,0 +1,159 @@
+Metadata-Version: 2.4
+Name: openknet
+Version: 1.0.0
+Summary: Production-grade generalist knowledge network mining framework
+Requires-Python: >=3.10
+Description-Content-Type: text/markdown
+Requires-Dist: typer[all]>=0.12
+Requires-Dist: pydantic>=2.6
+Requires-Dist: pydantic-settings>=2.2
+Requires-Dist: PyYAML>=6.0
+Requires-Dist: fastapi>=0.110
+Requires-Dist: uvicorn[standard]>=0.27
+Requires-Dist: sqlalchemy[asyncio]>=2.0
+Requires-Dist: aiosqlite>=0.20
+Requires-Dist: pypdf>=4.0
+Requires-Dist: python-docx>=1.1
+Requires-Dist: beautifulsoup4>=4.12
+Requires-Dist: lxml>=5.0
+Requires-Dist: scikit-learn>=1.4
+Requires-Dist: numpy>=1.26
+Requires-Dist: loguru>=0.7
+Requires-Dist: chardet>=5.0
+Requires-Dist: httpx>=0.27
+Requires-Dist: asyncpg>=0.30
+Provides-Extra: postgres
+Requires-Dist: asyncpg>=0.30; extra == "postgres"
+Provides-Extra: dev
+Requires-Dist: pytest>=8.0; extra == "dev"
+Requires-Dist: pytest-asyncio>=0.23; extra == "dev"
+Requires-Dist: pytest-cov>=5.0; extra == "dev"
+Provides-Extra: semantic
+Requires-Dist: sentence-transformers>=3.0; extra == "semantic"
+
+# OpenKNet v1.0
+
+OpenKNet is a production-grade **Knowledge Network Mining** framework.
+It ingests local text documents in multiple formats, extracts configurable
+entities and relations, persists an evidence-backed knowledge graph in SQLite,
+and exposes retrieval through a CLI and an async HTTP API.
+
+Inspired by [KNetMiner](https://github.com/Rothamsted/knetminer).
+
+## What's new in v1.0
+
+| Area | v0 (MVP) | v1.0 (Production) |
+|---|---|---|
+| Storage | Flat JSON file | SQLite via async SQLAlchemy |
+| Document formats | `.txt`, `.md` | + PDF, DOCX, HTML |
+| Document size | Limited by RAM | Up to 100 MB per file (configurable) |
+| Chunking | Paragraph split, no overlap | Sentence-aware with configurable overlap |
+| Ranking | Simple string frequency | TF-IDF (scikit-learn) + degree + frequency |
+| API | Sync FastAPI | Async FastAPI + background build tasks |
+| Config | Hard-coded | `pydantic-settings` + env vars + `.env` |
+| Logging | None | `loguru` structured logging |
+| Tests | None | pytest (unit + integration) |
+| Deployment | Manual | Dockerfile + docker-compose |
+
+## Install
+
+```bash
+pip install -e .
+# Optional semantic ranking:
+pip install -e ".[semantic]"
+```
+
+## Quick start
+
+```bash
+# 1. Initialize a project with a schema
+openknet init support-demo --schema examples/support/schema.yaml
+
+# 2. Ingest documents (TXT, MD, PDF, DOCX, HTML supported)
+openknet ingest examples/support/docs --project support-demo
+
+# 3. Build the knowledge graph
+openknet build --project support-demo
+
+# 4. Query
+openknet rank "login error" --project support-demo
+openknet ask "what components are related to login errors?" --project support-demo
+openknet path "AuthService" "error 503" --project support-demo
+
+# 5. Show stats
+openknet stats --project support-demo
+```
+
+## Configuration
+
+All settings can be set via environment variables (prefix `OPENKNET_`) or a `.env` file:
+
+| Variable | Default | Description |
+|---|---|---|
+| `OPENKNET_WORKSPACE_ROOT` | `.openknet` | Where the SQLite DB lives |
+| `OPENKNET_DATABASE_URL` | _(sqlite in workspace)_ | Override full DB URL |
+| `OPENKNET_CHUNK_SIZE` | `800` | Target chars per chunk |
+| `OPENKNET_CHUNK_OVERLAP` | `150` | Overlap chars between chunks |
+| `OPENKNET_MAX_FILE_SIZE_MB` | `100` | Skip files larger than this |
+| `OPENKNET_LOG_LEVEL` | `INFO` | Logging verbosity |
+| `OPENKNET_API_PORT` | `8000` | HTTP API port |
+
+## HTTP API
+
+```bash
+openknet serve --port 8000
+# or
+uvicorn openknet.api.app:app --reload
+```
+
+Interactive docs at `http://localhost:8000/docs`.
+
+Key endpoints:
+
+| Method | Path | Description |
+|---|---|---|
+| GET | `/health` | Liveness check |
+| GET | `/projects` | List all projects |
+| POST | `/projects/{name}` | Create project |
+| GET | `/projects/{name}/stats` | Project statistics |
+| POST | `/projects/{name}/build?sync=true` | Build knowledge graph |
+| GET | `/rank?project=…&query=…` | Rank entities |
+| GET | `/ask?project=…&question=…` | Ask a question |
+| GET | `/path?project=…&source=…&target=…` | Find entity paths |
+
+## Schema format
+
+```yaml
+entities:
+  Customer:
+    seed_terms: [ACME, Globex]      # names that map to this type
+    aliases: [client, account]       # additional synonyms
+
+relations:
+  reports:
+    source: Customer
+    target: Incident
+    triggers: [reported, reports]   # keywords that activate this relation
+```
+
+## Docker
+
+```bash
+docker compose up --build
+```
+
+## Tests
+
+```bash
+pip install -e ".[dev]"
+pytest --cov=openknet tests/
+```
+
+## Extending
+
+- **New document formats:** add a `Reader` class in `openknet/ingest/readers.py`
+- **Better NLP:** replace `ExtractionPipeline` in `openknet/extract/pipeline.py` with a
+  spaCy or transformer-based extractor
+- **Semantic ranking:** install `sentence-transformers` and update `search/ranker.py` to use
+  dense embeddings
+- **PostgreSQL:** set `OPENKNET_DATABASE_URL=postgresql+asyncpg://user:pass@host/db`

@@ -1,0 +1,180 @@
+INCIDENT REPORT — INC-1001
+Status: Resolved
+Severity: P1
+Reported by: ACME
+Date: 2024-03-12
+
+Summary:
+INC-1001 reported by ACME affects Portal X. The login error presents as error 503.
+The investigation traced to AuthService triggering error 503 during token validation.
+Portal X depends on AuthService and SessionStore.
+INC-1001 was mitigated by AuthService rollback.
+
+Timeline:
+09:12 — ACME reported repeated login error in Portal X.
+09:18 — Incident INC-1001 opened. Assigned to Alice.
+09:25 — Error 503 confirmed on /auth/token endpoint.
+09:40 — Root cause identified: AuthService causes error 503 after a bad deployment at 08:50.
+09:55 — INC-1001 resolved by AuthService rollback to v2.3.1.
+10:05 — SessionStore connectivity verified normal. Portal X restored.
+
+Root Cause:
+AuthService v2.4.0 introduced a null pointer in the JWT validation path, causing error 503 for
+all token requests. Portal X depends on AuthService for every login flow, so all users of Portal X
+experienced the login error. SessionStore was not involved in the fault but was checked because
+Portal X depends on SessionStore for session persistence after successful login.
+
+Actions:
+- AuthService deployment gating added.
+- Load test for /auth/token required before any future AuthService release.
+- Assigned to Alice (SRE Team) for post-mortem.
+- Escalated to Platform Team for deployment policy review.
+
+---
+
+INCIDENT REPORT — INC-1002
+Status: Resolved
+Severity: P2
+Reported by: Globex
+Date: 2024-03-14
+
+Summary:
+INC-1002 reported by Globex affects Billing API. The issue involves BillingService and timeout.
+BillingService causes timeout when upstream payment provider latency is high.
+Billing API depends on BillingService.
+
+Timeline:
+14:00 — Globex reported transaction failures in Billing API.
+14:10 — Incident INC-1002 opened. Assigned to Bob.
+14:22 — BillingService logs show timeout on calls to PaymentGateway.
+14:35 — PaymentGateway latency confirmed at 12 s (SLA: 2 s). BillingService causes timeout after 5 s.
+15:00 — Circuit breaker enabled on BillingService → PaymentGateway path.
+15:20 — INC-1002 resolved by BillingService circuit-breaker configuration.
+
+Root Cause:
+PaymentGateway experienced degraded upstream connectivity. BillingService has no circuit breaker
+and retried each request three times, amplifying the timeout. Billing API depends on BillingService
+for all payment processing, making Billing API fully unavailable to Globex.
+
+Actions:
+- BillingService circuit breaker added (owned by Backend Team).
+- Timeout reduced from 5 s to 2 s.
+- PaymentGateway SLA alerting added.
+- Assigned to Bob. Escalated to Backend Team.
+
+---
+
+INCIDENT REPORT — INC-1003
+Status: Resolved
+Severity: P2
+Reported by: TechCorp
+Date: 2024-03-21
+
+Summary:
+INC-1003 reported by TechCorp affects Analytics Dashboard. The investigation identified CacheLayer
+producing error 500 on cache-miss paths. Analytics Dashboard depends on CacheLayer for query
+acceleration. INC-1003 was resolved by CacheLayer configuration update.
+
+Timeline:
+10:05 — TechCorp reported slow and broken charts in Analytics Dashboard.
+10:15 — INC-1003 opened. Assigned to Carol.
+10:30 — Error 500 found in Analytics Dashboard API logs; traced to CacheLayer.
+10:55 — CacheLayer causes error 500 on cache-miss when result set exceeds 50 MB.
+11:20 — CacheLayer memory limit raised; large-result bypass added.
+11:35 — INC-1003 resolved by CacheLayer configuration update. Analytics Dashboard restored.
+
+Root Cause:
+CacheLayer OOM (out-of-memory) triggered on large result sets due to an undersized memory limit.
+CacheLayer throws error 500 rather than falling through to the database, so Analytics Dashboard
+returned errors for every query that resulted in a cache miss on large datasets.
+
+Actions:
+- CacheLayer memory limit raised to 4 GB (owned by Platform Team).
+- Fallback-to-DB path added for OOM scenarios.
+- Monitoring added: CacheLayer memory usage alerted at 80%.
+- Assigned to Carol. Escalated to Platform Team.
+
+---
+
+INCIDENT REPORT — INC-1004
+Status: Resolved
+Severity: P3
+Reported by: Umbrella
+Date: 2024-04-02
+
+Summary:
+INC-1004 reported by Umbrella affects Notification Service. EmailWorker causes timeout when the
+outbound SMTP relay is rate-limited (error 429). Notification Service depends on EmailWorker for
+all outbound email delivery.
+
+Timeline:
+08:45 — Umbrella reported missing transactional emails from Notification Service.
+09:00 — INC-1004 opened. Assigned to David.
+09:20 — EmailWorker logs reveal error 429 from SMTP relay; EmailWorker causes timeout after retry
+         exhaustion.
+09:45 — SMTP relay quota increased; retry backoff tuned.
+10:00 — INC-1004 resolved by EmailWorker retry configuration change.
+
+Root Cause:
+Umbrella's email volume spike exceeded the SMTP relay's hourly quota. EmailWorker has no
+exponential backoff and retried immediately, consuming quota faster and compounding the error 429
+rate. Notification Service depends on EmailWorker and silently dropped emails after the worker
+queue filled.
+
+Actions:
+- EmailWorker exponential backoff added.
+- Notification Service dead-letter queue added so dropped emails can be replayed.
+- SMTP relay quota doubled for Umbrella tier.
+- Assigned to David (Backend Team). Escalated to SRE Team for queue alerting.
+
+---
+
+INCIDENT REPORT — INC-1005
+Status: Resolved
+Severity: P1
+Reported by: Initech
+Date: 2024-04-10
+
+Summary:
+INC-1005 reported by Initech affects Auth Gateway. DatabaseCluster causes deadlock under concurrent
+write load, producing error 500 in Auth Gateway. Auth Gateway depends on DatabaseCluster for
+session persistence. INC-1005 was resolved by DatabaseCluster index optimization.
+
+Timeline:
+02:10 — Automated alerting: Auth Gateway error rate > 5%.
+02:15 — INC-1005 opened. Assigned to Eve. Escalated to SRE Team.
+02:30 — Auth Gateway error 500 on /sessions/create; traced to DatabaseCluster.
+03:00 — DatabaseCluster deadlock identified on sessions table; CPU spike observed.
+03:45 — Index added to sessions.user_id column; deadlock frequency dropped to zero.
+04:00 — INC-1005 resolved by DatabaseCluster index optimization.
+
+Root Cause:
+A schema migration removed a covering index on sessions.user_id, causing full-table scans and
+deadlock under concurrent writes from Initech's batch import. Auth Gateway depends on
+DatabaseCluster directly (no read replica for writes), so deadlocks caused error 500 for all
+session creation requests.
+
+Actions:
+- Migration pipeline now requires index impact review.
+- DatabaseCluster owned by Platform Team; post-mortem assigned to Eve.
+- LoadBalancer health check tuned to drain traffic faster during DatabaseCluster degradation.
+
+---
+
+INCIDENT REPORT — INC-1006
+Status: Open
+Severity: P2
+Reported by: ACME
+Date: 2024-04-15
+
+Summary:
+INC-1006 reported by ACME affects Portal X. Intermittent login error; memory leak suspected in
+AuthService. Portal X depends on AuthService. Investigation ongoing, assigned to Alice. Escalated
+to Platform Team.
+
+Timeline:
+16:00 — ACME reported intermittent login error in Portal X (< 1% of requests).
+16:10 — INC-1006 opened. Assigned to Alice.
+16:40 — AuthService heap dump shows memory leak; heap growing 50 MB/hour.
+17:00 — Temporary fix: AuthService pod recycling every 2 hours.
+Status: Open — root cause of memory leak under investigation by Platform Team.

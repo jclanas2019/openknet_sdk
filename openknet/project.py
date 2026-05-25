@@ -44,6 +44,49 @@ def _file_hash(path: Path) -> str:
 
 # ─────────────────────────────────────────────────────────────────────────────
 
+import asyncio as _asyncio
+import hashlib as _hashlib
+
+# ── Per-project build locks ────────────────────────────────────────────────
+# Prevents concurrent builds (full + incremental) on the same project.
+# In-process lock (asyncio.Lock) covers single-process deployments.
+# PostgreSQL advisory lock covers multi-process deployments.
+
+_build_locks: dict[str, _asyncio.Lock] = {}
+_locks_meta = _asyncio.Lock()
+
+
+async def _acquire_build_lock(project_name: str, project_id: str, session) -> None:
+    global _build_locks
+    async with _locks_meta:
+        if project_name not in _build_locks:
+            _build_locks[project_name] = _asyncio.Lock()
+    lock = _build_locks[project_name]
+    if lock.locked():
+        raise RuntimeError(
+            f"Build already running for project {project_name!r}. "
+            "Wait for it to finish or use incremental=True."
+        )
+    await lock.acquire()
+    from .db import current_dialect
+    if current_dialect() == "postgresql":
+        lid = int(_hashlib.md5(project_id.encode()).hexdigest()[:8], 16) % (2**31 - 1)
+        await session.execute(text("SELECT pg_advisory_lock(:l)"), {"l": lid})
+
+
+async def _release_build_lock(project_name: str, project_id: str, session) -> None:
+    lock = _build_locks.get(project_name)
+    if lock and lock.locked():
+        lock.release()
+    from .db import current_dialect
+    if current_dialect() == "postgresql":
+        lid = int(_hashlib.md5(project_id.encode()).hexdigest()[:8], 16) % (2**31 - 1)
+        try:
+            await session.execute(text("SELECT pg_advisory_unlock(:l)"), {"l": lid})
+        except Exception:
+            pass
+
+
 import re as _re
 
 def _numeric_variants(a: str, b: str) -> bool:
@@ -148,9 +191,15 @@ class Project:
     # ── lifecycle ─────────────────────────────────────────────────────────────
 
     @classmethod
-    async def init(cls, name: str, schema: str | Path | None = None) -> "Project":
+    async def init(
+        cls,
+        name: str,
+        schema: str | Path | None = None,
+        schema_yaml: str | None = None,   # raw YAML string — safer for API calls
+    ) -> "Project":
         await init_db()
-        schema_yaml = Path(schema).read_text(encoding="utf-8") if schema else "entities: {}\nrelations: {}\n"
+        if schema_yaml is None:
+            schema_yaml = Path(schema).read_text(encoding="utf-8") if schema else "entities: {}\nrelations: {}\n"
         pid = _id("proj", name)
         async with get_session() as session:
             result = await session.execute(select(ProjectORM).where(ProjectORM.name == name))
@@ -271,7 +320,7 @@ class Project:
 
         async with get_session() as session:
             proj = await self._require(session)
-
+            await _acquire_build_lock(self.name, proj.id, session)
             build_log = BuildLog(project_id=proj.id, status="running",
                                  mode="incremental" if incremental else "full")
             session.add(build_log)
@@ -414,6 +463,9 @@ class Project:
                 build_log.finished_at = datetime.datetime.utcnow()
                 logger.exception(f"Build failed for {self.name!r}")
                 raise
+
+            finally:
+                await _release_build_lock(self.name, proj.id, session)
 
         invalidate(self.name)
 

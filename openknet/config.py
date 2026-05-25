@@ -21,8 +21,13 @@ class Settings(BaseSettings):
     api_port: int = 8000
 
     # ---- Auth ----
-    require_auth: bool = False      # set True in production
-    admin_api_key: str = ""         # master key; auto-generated if empty on first start
+    require_auth: bool = False
+    admin_api_key: str = ""
+
+    # ---- CORS ----
+    cors_origins: str = "*"        # comma-separated, e.g. "http://localhost:3000,https://app.example.com"
+    cors_methods: str = "*"
+    cors_headers: str = "*"      # set True in production
 
     # ---- PostgreSQL pool ----
     pg_pool_size: int = 10

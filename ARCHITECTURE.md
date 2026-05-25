@@ -135,6 +135,33 @@ For SQLite, all FTS lives in a separate `chunks_fts` virtual table.
 For PostgreSQL, FTS is a functional GIN index on the `chunks` table —
 no extra table required.
 
+## Confidence signals
+
+OpenKNet uses two distinct types of confidence that should not be conflated:
+
+**Evidence confidence** (0–1 float on `Relation.confidence`)
+Assigned during extraction (currently always 0.75 for pattern-based extraction).
+Will reflect precision when NLP or LLM extractors provide calibrated scores.
+This is a property of the extracted knowledge, not of a query response.
+
+**Coverage score** (`_estimate_coverage()` in `nodes.py`)
+A heuristic routing signal used internally by `ReflectiveAskGraph` to decide
+whether to reflect or synthesize. It combines:
+- Top entity score magnitude (how strong is the BM25/semantic match)
+- Entity type diversity (are we finding a mix of types or just one)
+- Snippet presence (did FTS find supporting text)
+
+This score is **not a calibrated probability**. It is a routing heuristic.
+Do not expose it to end users as "confidence in the answer". It is not.
+
+**LLM-reported confidence** (`RootCauseGraph` output)
+The `root_cause_node` asks the LLM to return `"confidence": 0.0–1.0`.
+This is the LLM's self-reported certainty, which has no statistical calibration.
+Always present root-cause analysis output with the caveat that it requires
+human review before actioning — especially for incident response.
+
+---
+
 ## LangGraph integration
 
 The LangGraph graphs wrap SDK calls into stateful nodes. The `KNetState`

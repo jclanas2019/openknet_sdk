@@ -1,10 +1,15 @@
+"""
+API key authentication + RBAC enforcement for OpenKNet.
+
+Middleware:   validates every request except public paths
+Dependencies: FastAPI Depends() used per-endpoint for role enforcement
+"""
 from __future__ import annotations
+import datetime
 import hashlib
 import secrets
-import datetime
-from functools import wraps
 
-from fastapi import Request
+from fastapi import Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
 from loguru import logger
 from sqlalchemy import select
@@ -12,6 +17,17 @@ from sqlalchemy import select
 from ..config import settings
 from ..db import get_session
 from ..models.orm import ApiKey
+
+
+# ---------------------------------------------------------------------------
+# Roles
+# ---------------------------------------------------------------------------
+
+ROLE_LEVELS: dict[str, int] = {"reader": 0, "writer": 1, "admin": 2}
+
+
+def _role_level(role: str) -> int:
+    return ROLE_LEVELS.get(role, -1)
 
 
 # ---------------------------------------------------------------------------
@@ -31,13 +47,7 @@ def generate_key(prefix: str = "ok") -> str:
 # ---------------------------------------------------------------------------
 
 async def validate_request(request: Request) -> tuple[bool, str]:
-    """
-    Return (is_valid, role).
-    role is one of: "admin" | "writer" | "reader" | "anonymous"
-    """
-    if not settings.require_auth:
-        return True, "admin"
-
+    """Return (is_valid, role). Role: 'admin'|'writer'|'reader'."""
     raw_key = (
         request.headers.get("X-API-Key")
         or request.headers.get("Authorization", "").removeprefix("Bearer ")
@@ -47,7 +57,7 @@ async def validate_request(request: Request) -> tuple[bool, str]:
     if not raw_key:
         return False, ""
 
-    # Admin master key (env var — never stored in DB)
+    # Master key from env (never stored in DB)
     admin = settings.admin_api_key
     if admin and secrets.compare_digest(raw_key, admin):
         return True, "admin"
@@ -63,10 +73,8 @@ async def validate_request(request: Request) -> tuple[bool, str]:
         key_obj = result.scalar_one_or_none()
         if key_obj is None:
             return False, ""
-        # Check expiry
         if key_obj.expires_at and key_obj.expires_at < datetime.datetime.utcnow():
             return False, ""
-        # Record last use (fire-and-forget; don't fail auth if this errors)
         try:
             key_obj.last_used_at = datetime.datetime.utcnow()
         except Exception:
@@ -75,15 +83,14 @@ async def validate_request(request: Request) -> tuple[bool, str]:
 
 
 # ---------------------------------------------------------------------------
-# ASGI middleware
+# ASGI middleware — authentication only
 # ---------------------------------------------------------------------------
 
 class APIKeyMiddleware:
     """
-    ASGI middleware that enforces API key authentication.
-    Skipped for: /health, /docs, /openapi.json, /metrics.
+    Validates API keys and stores the role in request.scope["auth_role"].
+    Does NOT enforce roles — that is done per-endpoint via require_role().
     """
-
     PUBLIC_PATHS = {"/health", "/docs", "/openapi.json", "/redoc", "/metrics"}
 
     def __init__(self, app):
@@ -96,6 +103,7 @@ class APIKeyMiddleware:
 
         path = scope.get("path", "")
         if path in self.PUBLIC_PATHS or not settings.require_auth:
+            scope["auth_role"] = "admin" if not settings.require_auth else "anonymous"
             await self.app(scope, receive, send)
             return
 
@@ -109,6 +117,41 @@ class APIKeyMiddleware:
             await resp(scope, receive, send)
             return
 
-        # Inject role into request state for downstream use
-        scope.setdefault("state", {})["auth_role"] = role
+        scope["auth_role"] = role
         await self.app(scope, receive, send)
+
+
+# ---------------------------------------------------------------------------
+# FastAPI Depends — per-endpoint role enforcement
+# ---------------------------------------------------------------------------
+
+def require_role(minimum: str):
+    """
+    FastAPI dependency factory. Usage:
+
+        @app.post("/build")
+        async def build(role=Depends(require_role("writer"))):
+            ...
+
+    When OPENKNET_REQUIRE_AUTH=false, all roles are implicitly "admin".
+    """
+    min_level = ROLE_LEVELS[minimum]
+
+    async def _check(request: Request) -> str:
+        if not settings.require_auth:
+            return "admin"
+        role = request.scope.get("auth_role", "anonymous")
+        if _role_level(role) < min_level:
+            raise HTTPException(
+                status_code=403,
+                detail=f"Role '{minimum}' required. Your role: '{role or 'anonymous'}'.",
+            )
+        return role
+
+    return Depends(_check)
+
+
+# Convenience shortcuts
+require_reader: Depends = require_role("reader")
+require_writer: Depends = require_role("writer")
+require_admin:  Depends = require_role("admin")

@@ -24,6 +24,10 @@ class Settings(BaseSettings):
     require_auth: bool = False
     admin_api_key: str = ""
 
+    # ---- Metrics ----
+    metrics_public: bool = True        # set False to require auth on /metrics
+                                       # (protects operational state from internet)
+
     # ---- CORS ----
     cors_origins: str = "*"        # comma-separated, e.g. "http://localhost:3000,https://app.example.com"
     cors_methods: str = "*"

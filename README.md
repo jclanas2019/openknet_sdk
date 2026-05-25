@@ -78,6 +78,7 @@ Documents (TXT, MD, PDF, DOCX, HTML)
 24. [Extending](#extending)
 25. [Testing](#testing)
 26. [Version analysis — v0 → v1 → v2](#version-analysis)
+27. [Roadmap](#roadmap)
 
 ---
 
@@ -906,6 +907,17 @@ curl http://localhost:8000/health
 #### `GET /metrics`
 
 Prometheus metrics endpoint (requires `pip install openknet[metrics]`).
+
+Access control is configurable:
+
+```env
+# Public (default) — Prometheus can scrape without a key
+OPENKNET_METRICS_PUBLIC=true
+
+# Protected — requires API key like any other endpoint
+# Recommended when the API is exposed to the internet
+OPENKNET_METRICS_PUBLIC=false
+```
 
 ```bash
 curl http://localhost:8000/metrics
@@ -1941,6 +1953,20 @@ pytest tests/integration/ -v
 | `tests/integration/test_project.py` | Full pipeline (ingest→build→query) |
 | `tests/integration/test_api.py` | All HTTP endpoints |
 | `tests/integration/test_sdk_client.py` | SDK async/sync, all methods |
+
+---
+
+## Roadmap
+
+See [ROADMAP.md](ROADMAP.md) for the full feature matrix with ✅ implemented and 🔲 planned items.
+
+**v2.1 priorities** (next release):
+- LLM-based relation extraction during build (implicit relations without trigger keywords)
+- Coreference resolution ("the service" → "AuthService")
+- PostgreSQL integration test suite
+- Structured JSON logging with file rotation
+
+**Extraction quality note** — Pattern-based extraction achieves ~85–90% precision and ~60–75% recall on technical documents (runbooks, incident reports). For conversational or narrative text, recall drops. See ROADMAP.md for the planned LLM-based extraction path.
 
 ---
 

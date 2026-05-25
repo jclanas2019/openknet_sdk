@@ -91,7 +91,14 @@ class APIKeyMiddleware:
     Validates API keys and stores the role in request.scope["auth_role"].
     Does NOT enforce roles — that is done per-endpoint via require_role().
     """
-    PUBLIC_PATHS = {"/health", "/docs", "/openapi.json", "/redoc", "/metrics"}
+    ALWAYS_PUBLIC = {"/health", "/docs", "/openapi.json", "/redoc"}
+
+    @property
+    def PUBLIC_PATHS(self):
+        paths = set(self.ALWAYS_PUBLIC)
+        if settings.metrics_public or not settings.require_auth:
+            paths.add("/metrics")
+        return paths
 
     def __init__(self, app):
         self.app = app

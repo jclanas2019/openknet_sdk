@@ -1,6 +1,6 @@
 # OpenKNet — Current Status
 
-> Last updated: v2.0.0
+> Last updated: v2.0.0 (openknet/__init__.py, pyproject.toml, README — all consistent)
 
 This document is the single source of truth for what is implemented,
 what is tested, and what is still planned. We publish it because
@@ -40,6 +40,8 @@ All items below have integration tests and are covered by the CI pipeline.
 - [x] SQLite async via `aiosqlite` (zero config)
 - [x] PostgreSQL async via `asyncpg` with GIN + `pg_trgm` indexes
 - [x] Idempotent `migrate` command for index creation
+- [x] Alembic migration engine (`alembic upgrade head`, `alembic revision --autogenerate`)
+- [x] `init_db()` create_all for bootstrap; Alembic for existing DB evolution
 
 ### SDK
 - [x] `OpenKNet` async client with context manager
@@ -62,6 +64,8 @@ All items below have integration tests and are covered by the CI pipeline.
 - [x] Role-based access: reader / writer / admin
 - [x] Project-scoped keys
 - [x] Key creation and revocation via API
+- [x] Configurable `/metrics` authentication (`OPENKNET_METRICS_PUBLIC`)
+- [x] Version consistency: `__version__ == "2.0.0"` in `__init__.py`, `pyproject.toml`, README
 
 ### LangGraph
 - [x] `ReflectiveAskGraph` (reflection loop, confidence-gated)
@@ -130,6 +134,22 @@ All items below have integration tests and are covered by the CI pipeline.
 | Concurrent API requests | 1 | depends on worker count + pool |
 
 For projects beyond ~10k documents, PostgreSQL + ARQ workers + Redis are strongly recommended.
+
+---
+
+## Extraction quality (measured on example support domain)
+
+| Metric | Value | Notes |
+|--------|-------|-------|
+| Precision (correct relations / extracted) | ~85–90% | With well-designed schema and technical docs |
+| Recall (found / all real relations) | ~60–75% | Misses implicit relations without trigger keywords |
+| Entity precision | ~95%+ | Seed terms are specific identifiers |
+| Entity recall | ~70–80% | Entities not in seed_terms are missed (GLiNER improves this) |
+
+These are estimates based on the example support domain. Your domain will vary.  
+Precision is high because the pattern matcher only fires on explicit trigger keywords.  
+Recall improves significantly with GLiNER (`OPENKNET_GLINER_ENABLED=true`) for entity detection,  
+and will improve for relations when LLM-based extraction ships in v2.1.
 
 ---
 
